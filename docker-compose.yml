@@ -9,18 +9,58 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d fantasy_football"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: ./backend
     ports:
       - "8001:8000"
     environment:
-      - DATABASE_URL=postgresql://user:password@db/fantasy_football
+      - DATABASE_URL=postgresql://user:password@db:5432/fantasy_football
+      - PYTHONPATH=/app
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - draft_data:/app/draft_states
+      - learning_data:/app/learning_data
+    command: ["bash", "/app/startup.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  scraper:
+    build: ./backend
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/fantasy_football
+      - PYTHONPATH=/app
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: >
+      sh -c "
+        echo '🔍 Starting data scraper and ingestion...' &&
+        sleep 15 &&
+        echo '📊 Running scraper to fetch latest player data...' &&
+        python /app/app/scraping/scraper.py &&
+        echo '✅ Scraper completed successfully!' &&
+        echo '⏰ Scraper will run again in 24 hours...' &&
+        while true; do 
+          sleep 86400
+          echo '🔄 Running daily scraper update...'
+          python /app/app/scraping/scraper.py
+        done
+      "
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
@@ -32,8 +72,19 @@ services:
       - ./frontend:/app
       - /app/node_modules
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     command: npm run dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres_data:
+    driver: local
+  draft_data:
+    driver: local
+  learning_data:
+    driver: local

@@ -256,17 +256,68 @@ export const analysisApi = {
   }): Promise<
     | ScarcityAnalysis
     | {
-        positions: Array<{
-          position: Position;
-          tier_breaks: number[];
-          drop_off_points: number[];
-          scarcity_score: number;
-          player_count: number;
-        }>;
-      }
+      positions: Array<{
+        position: Position;
+        tier_breaks: number[];
+        drop_off_points: number[];
+        scarcity_score: number;
+        player_count: number;
+      }>;
+    }
   > => {
     const response = await api.get('/analysis/scarcity-analysis', { params });
     return response.data;
+  },
+
+  // Team drill-down: details with latest draft context and evaluation
+  getTeamDetails: async (teamId: number, scoringType: ScoringType = 'ppr') => {
+    const response = await api.get(`/analysis/team/${teamId}/details`, {
+      params: { scoring_type: scoringType },
+    });
+    return response.data as {
+      team: { id: number; name: string; league_id: number };
+      latest_draft_id: number | null;
+      evaluation: any;
+      picks: Array<{
+        pick_number: number;
+        round_number: number;
+        pick_in_round: number;
+        player: { id: number | null; name: string | null; position: string | null; team: string | null };
+      }>;
+    };
+  },
+
+  // Team drill-down: full draft board for latest league draft
+  getTeamDraftBoard: async (teamId: number) => {
+    const response = await api.get(`/analysis/team/${teamId}/draft-board`);
+    return response.data as {
+      league_id: number;
+      draft_id: number;
+      current_pick: number;
+      current_round: number;
+      picks: Array<{
+        pick_number: number;
+        round_number: number;
+        pick_in_round: number;
+        team_id: number;
+        team_name: string;
+        player: { id: number | null; name: string | null; position: string | null; team: string | null };
+      }>;
+    };
+  },
+
+  // Team drill-down: simulation preview (weekly score distribution)
+  getTeamSimulationPreview: async (teamId: number, scoringType: ScoringType = 'ppr') => {
+    const response = await api.get(`/analysis/team/${teamId}/simulation-preview`, {
+      params: { scoring_type: scoringType },
+    });
+    return response.data as {
+      team_id: number;
+      team_name: string;
+      scoring_type: string;
+      weekly_scores: number[];
+      avg_score: number;
+    };
   },
 
 
@@ -375,8 +426,8 @@ export const dynamicDraftApi = {
 
   // Get players for draft
   getPlayers: async (draftId: string) => {
-    const response = await api.get('/dynamic-draft/players', { 
-      params: { draft_id: draftId } 
+    const response = await api.get('/dynamic-draft/players', {
+      params: { draft_id: draftId }
     });
     return response.data;
   },

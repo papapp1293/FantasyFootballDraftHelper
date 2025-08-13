@@ -64,7 +64,14 @@ interface AdviceSuggestion {
   player_id: number;
   name: string;
   position: string;
-  vorp: number;
+  vorp?: number;
+  das?: number;
+  strategic_score?: number;
+  current_points?: number;
+  replacement_points?: number;
+  replacement_player?: string;
+  picks_until_next?: number;
+  das_reason?: string;
   reason: string;
   scarcity_flag: boolean;
   robust_score?: number;
@@ -167,7 +174,7 @@ const DynamicDraftPage: React.FC = () => {
         });
         // Small delay to let UI update, then start bot picks
         setTimeout(() => {
-          triggerBotPicks();
+          triggerBotPicks(newDraftId);
         }, 1000);
       } else {
         console.log('Initial draft state - user picks first', { 
@@ -191,7 +198,7 @@ const DynamicDraftPage: React.FC = () => {
       const response = await dynamicDraftApi.getPlayersWithVorp({
         draft_id: draftId,
         scoring_mode: scoringMode,
-        limit: 200
+        limit: 500
       });
       setAvailablePlayers(response.players);
     } catch (error) {
@@ -205,8 +212,9 @@ const DynamicDraftPage: React.FC = () => {
   const loadAdvice = async (draftId: string) => {
     setIsLoadingAdvice(true);
     try {
-      const result = await dynamicDraftApi.getAdvice(draftId, draftSpot, adviceMode);
-      setAdvice(result.advice);
+      // Get strategic user advice using Draft Advantage Score
+      const userAdviceResult = await dynamicDraftApi.getAdvice(draftId, draftSpot, 'draft_advantage');
+      setAdvice(userAdviceResult.advice);
     } catch (error) {
       console.error('Error loading advice:', error);
     } finally {
@@ -263,7 +271,7 @@ const DynamicDraftPage: React.FC = () => {
       if (newDraftState.current_team_id !== draftSpot) {
         // Small delay to let UI update, then start bot picks
         setTimeout(() => {
-          triggerBotPicks();
+          triggerBotPicks(draftId);
         }, 500);
       }
     } catch (error) {
@@ -273,16 +281,17 @@ const DynamicDraftPage: React.FC = () => {
   };
 
   // Trigger bot picks with realistic 3-second delays
-  const triggerBotPicks = async () => {
-    console.log('triggerBotPicks called', { draftId, draftState });
-    if (!draftId) {
+  const triggerBotPicks = async (targetDraftId?: string) => {
+    const activeDraftId = targetDraftId || draftId;
+    console.log('triggerBotPicks called', { activeDraftId, draftState });
+    if (!activeDraftId) {
       console.log('Missing draftId, returning');
       return;
     }
     
     try {
       // Get fresh draft state to ensure we have current data
-      let currentState = await dynamicDraftApi.getDraftState(draftId);
+      let currentState = await dynamicDraftApi.getDraftState(activeDraftId);
       setDraftState(currentState);
       console.log('Starting bot picks loop with fresh state', { currentTeam: currentState.current_team_id, userSpot: draftSpot });
       
@@ -296,9 +305,9 @@ const DynamicDraftPage: React.FC = () => {
         await new Promise(resolve => setTimeout(resolve, 3000));
         
         try {
-          // Simulate bot pick with some randomness
-          console.log(`Getting advice for team ${currentState.current_team_id}`);
-          const botResult = await dynamicDraftApi.getAdvice(draftId, currentState.current_team_id, 'robust');
+          // Get realistic bot advice (ADP/ECR + positional need) - fallback until Plackett-Luce is moved to startup
+          console.log(`Getting realistic bot advice for team ${currentState.current_team_id}`);
+          const botResult = await dynamicDraftApi.getAdvice(activeDraftId, currentState.current_team_id, 'bot_realistic');
           console.log('Bot advice result:', botResult);
           
           if (botResult.advice && botResult.advice.length > 0) {
@@ -307,16 +316,16 @@ const DynamicDraftPage: React.FC = () => {
             const selectedPlayer = botResult.advice[randomIndex];
             console.log('Selected player for bot pick:', selectedPlayer);
             
-            const pickResult = await dynamicDraftApi.makePick(draftId, selectedPlayer.player_id);
+            const pickResult = await dynamicDraftApi.makePick(activeDraftId, selectedPlayer.player_id);
             console.log('Pick result:', pickResult);
             addNotification(`Team ${pickResult.pick.team_id} drafted: ${pickResult.pick.player.name} (${pickResult.pick.player.position})`);
             
             // Update current state
-            currentState = await dynamicDraftApi.getDraftState(draftId);
+            currentState = await dynamicDraftApi.getDraftState(activeDraftId);
             console.log('Updated draft state:', currentState);
             
             // Refresh available players immediately to remove drafted player
-            await loadAvailablePlayers(draftId);
+            await loadAvailablePlayers(activeDraftId);
           } else {
             console.log('No advice available, breaking bot pick loop');
             break;
@@ -330,9 +339,9 @@ const DynamicDraftPage: React.FC = () => {
       
       console.log('Bot picks complete, final refresh');
       // Final refresh of all data after bot picks complete
-      await loadAdvice(draftId);
-      await loadNextPickLine(draftId);
-      await loadDraftState(draftId);
+      await loadAdvice(activeDraftId);
+      await loadNextPickLine(activeDraftId);
+      await loadDraftState(activeDraftId);
       
       if (currentState.current_team_id === draftSpot) {
         addNotification("It's your turn to pick!");
@@ -565,6 +574,71 @@ const DynamicDraftPage: React.FC = () => {
         <div className="flex gap-6">
           {/* Main Content */}
           <div className={`flex-1 ${showDraftBoard ? 'w-2/3' : 'w-full'}`}>
+            {/* Draft Advantage Score Recommendations */}
+            {advice.length > 0 && draftState?.current_team_id === draftSpot && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg shadow-sm mb-6">
+                <div className="p-4 border-b border-blue-200">
+                  <h3 className="text-lg font-semibold text-blue-900">🎯 Strategic Recommendations (Draft Advantage Score)</h3>
+                  <p className="text-sm text-blue-700">Pick-aware analysis showing strategic advantage of drafting now vs. waiting</p>
+                </div>
+                <div className="p-4">
+                  <div className="grid gap-3">
+                    {advice.slice(0, 3).map((rec, index) => (
+                      <div key={rec.player_id} className="bg-white rounded-lg border border-blue-200 p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-3">
+                              <span className="bg-blue-600 text-white text-sm font-bold px-2 py-1 rounded">#{index + 1}</span>
+                              <div>
+                                <h4 className="font-semibold text-gray-900">{rec.name}</h4>
+                                <span className="text-sm text-gray-600">{rec.position}</span>
+                              </div>
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-4 text-sm">
+                              {rec.das && (
+                                <div>
+                                  <span className="font-medium text-blue-700">Draft Advantage: </span>
+                                  <span className="font-bold text-blue-900">+{rec.das} pts</span>
+                                </div>
+                              )}
+                              {rec.current_points && (
+                                <div>
+                                  <span className="font-medium text-gray-600">Current Value: </span>
+                                  <span>{rec.current_points} pts</span>
+                                </div>
+                              )}
+                              {rec.replacement_points && (
+                                <div>
+                                  <span className="font-medium text-gray-600">Next Pick Value: </span>
+                                  <span>{rec.replacement_points} pts</span>
+                                </div>
+                              )}
+                              {rec.picks_until_next && (
+                                <div>
+                                  <span className="font-medium text-gray-600">Picks Until Next: </span>
+                                  <span>{rec.picks_until_next}</span>
+                                </div>
+                              )}
+                            </div>
+                            <p className="mt-2 text-sm text-gray-700">{rec.reason}</p>
+                            {rec.das_reason && (
+                              <p className="mt-1 text-xs text-blue-600 italic">{rec.das_reason}</p>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => makePick(rec.player_id)}
+                            className="ml-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm font-medium"
+                          >
+                            Draft Now
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Available Players */}
             <div className="bg-white rounded-lg shadow-sm">
               <div className="p-4 border-b">
@@ -719,17 +793,31 @@ const DynamicDraftPage: React.FC = () => {
             </div>
             
             <div className="space-y-2 max-h-96 overflow-y-auto">
-              {draftState.rosters[selectedTeamRoster.toString()]?.picks.map((playerId, index) => {
-                const player = allPlayers.find(p => p.id === playerId);
+              {draftState.rosters[selectedTeamRoster.toString()]?.picks.map((pickData, index) => {
+                // Handle both player ID (number) and player object cases
+                let player;
+                if (typeof pickData === 'number') {
+                  // pickData is a player ID, find in allPlayers
+                  player = allPlayers.find(p => p.id === pickData);
+                } else if (pickData && typeof pickData === 'object') {
+                  // pickData is already a player object
+                  player = pickData;
+                } else {
+                  player = null;
+                }
+                
                 return (
                   <div key={index} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                     <div>
-                      <span className="font-medium">{player?.name || 'Unknown Player'}</span>
+                      <span className="font-medium">{player?.name || `Player ID: ${pickData}`}</span>
                       <span className="ml-2 text-sm text-gray-600">({player?.position || 'N/A'})</span>
                       <div className="text-xs text-gray-500">{player?.team || ''}</div>
                     </div>
                     <div className="text-right">
                       <span className="text-sm text-gray-500">Pick #{index + 1}</span>
+                      {player?.projected_points && (
+                        <div className="text-xs text-gray-400">Proj: {player.projected_points.toFixed(1)}</div>
+                      )}
                       {player?.vorp && (
                         <div className="text-xs text-gray-400">VORP: {player.vorp.toFixed(1)}</div>
                       )}

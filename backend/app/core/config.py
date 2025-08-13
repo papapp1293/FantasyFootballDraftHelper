@@ -8,7 +8,7 @@ class ScoringType(str, Enum):
     STANDARD = "standard"
 
 class Settings(BaseSettings):
-    # Database
+    # Database - uses .env file configuration
     DATABASE_URL: str = "postgresql://user:password@localhost:5432/fantasy_football"
     
     # Scoring configuration

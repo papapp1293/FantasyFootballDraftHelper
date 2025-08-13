@@ -61,10 +61,10 @@ export default function Home() {
       bgColor: 'bg-green-50',
     },
     {
-      name: 'League Comparison',
-      description: 'Compare all teams in your league with power rankings and playoff probability simulations.',
+      name: 'Player Rankings',
+      description: 'Complete player rankings with projections, ECR, ADP, and VORP analysis for all positions.',
       icon: UserGroupIcon,
-      href: '/analysis',
+      href: '/player-rankings',
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
     },
@@ -72,7 +72,7 @@ export default function Home() {
       name: 'Season Simulation',
       description: 'Monte Carlo season simulations to predict playoff chances and championship probabilities.',
       icon: TrophyIcon,
-      href: '/analysis',
+      href: '/analysis?tab=simulation',
       color: 'text-yellow-600',
       bgColor: 'bg-yellow-50',
     },
@@ -145,10 +145,10 @@ export default function Home() {
                 <ArrowRightIcon className="ml-2 h-5 w-5" />
               </Link>
               <Link
-                href="/analysis"
+                href="/player-rankings"
                 className="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 md:py-4 md:text-lg md:px-10 transition-colors duration-200"
               >
-                View Player Analysis
+                View Player Rankings
                 <ArrowRightIcon className="ml-2 h-5 w-5" />
               </Link>
             </div>

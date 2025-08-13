@@ -226,6 +226,7 @@ async def get_data_summary(
     try:
         from ..data.models import Player
         
+        # Try to connect to database and get real data
         total_players = db.query(Player).count()
         
         # Count by position
@@ -247,6 +248,23 @@ async def get_data_summary(
                 "completion_rate": round((players_with_ppr / total_players * 100), 1) if total_players > 0 else 0
             }
         }
-        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return fallback data if database connection fails
+        return {
+            "total_players": 0,
+            "position_breakdown": {
+                "QB": 0,
+                "RB": 0,
+                "WR": 0,
+                "TE": 0,
+                "K": 0,
+                "DEF": 0
+            },
+            "data_completeness": {
+                "players_with_ppr_projections": 0,
+                "players_with_vorp": 0,
+                "completion_rate": 0
+            },
+            "error": "Database not initialized - run data ingestion first",
+            "status": "needs_setup"
+        }
